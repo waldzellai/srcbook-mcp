@@ -3,7 +3,7 @@ import { sqliteTable, text, integer, unique } from 'drizzle-orm/sqlite-core';
 import { randomid } from '@srcbook/shared';
 
 export const configs = sqliteTable('config', {
-  // Directory where .src.md files will be stored and searched by default.
+  // Existing fields
   baseDir: text('base_dir').notNull(),
   defaultLanguage: text('default_language').notNull().default('typescript'),
   openaiKey: text('openai_api_key'),
@@ -19,7 +19,12 @@ export const configs = sqliteTable('config', {
   aiBaseUrl: text('ai_base_url'),
   // Null: unset. Email: subscribed. "dismissed": dismissed the dialog.
   subscriptionEmail: text('subscription_email'),
+  
+  // New MCP-related fields
+  mcpPort: integer('mcp_port').default(3001),
+  exaApiKey: text('exa_api_key'),
 });
+
 
 export type Config = typeof configs.$inferSelect;
 

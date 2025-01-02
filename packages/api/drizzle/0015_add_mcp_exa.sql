@@ -1,0 +1,5 @@
+ALTER TABLE config 
+ADD COLUMN mcp_port INTEGER DEFAULT 3001;
+
+ALTER TABLE config
+ADD COLUMN exa_api_key TEXT;
