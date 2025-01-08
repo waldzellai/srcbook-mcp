@@ -26,6 +26,9 @@ importers:
 
   .:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.4
+        version: 1.0.4
       turbo:
         specifier: ^2.1.1
         version: 2.1.1
