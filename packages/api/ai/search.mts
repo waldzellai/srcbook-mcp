@@ -19,6 +19,7 @@ import {
  * Custom error class for search-related errors
  * Includes the search query that caused the error for better error handling
  */
+// Keep the existing SearchError
 export class SearchError extends Error {
   constructor(message: string, public readonly searchQuery: string) {
     super(message);
@@ -26,6 +27,21 @@ export class SearchError extends Error {
   }
 }
 
+// Add connection error
+export class MCPConnectionError extends Error {
+  constructor(message: string, public readonly searchQuery: string, public readonly cause?: Error) {
+    super(message);
+    this.name = 'MCPConnectionError';
+  }
+}
+
+// Add timeout error
+export class MCPTimeoutError extends Error {
+  constructor(message: string, public readonly searchQuery: string) {
+    super(message);
+    this.name = 'MCPTimeoutError';
+  }
+}
 /**
  * Main service class for handling Model Context Protocol operations
  * Manages search functionality, WebSocket communications, and result formatting
@@ -96,13 +112,27 @@ const resourceContent = await client.request(
   {
     method: "resources/read",
     params: {
-      response: Response
+      resourceId: "resource-id", // Replace with actual resource ID
+      options: {
+        format: "text", // Or other format like "json", "binary" etc
+        encoding: "utf-8" // Or other encoding as needed
+      }
     }
   },
   ReadResourceResultSchema
 );
     this.client = client;
     return client;
+  }
+
+  /**
+   * Disconnects the MCP client and cleans up resources
+   */
+  public async disconnect(): Promise<void> {
+    if (this.client) {
+      await this.client.close();
+      this.client = null;
+    }
   }
 
   /**
@@ -135,22 +165,30 @@ const resourceContent = await client.request(
   public async search(query: string, numResults: number = 10): Promise<SearchResponse> {
     try {
       const client = await this.getClient();
-      const response = await client.callTool({
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new MCPTimeoutError('Search timeout', query)), 30000));
+      const searchPromise = client.callTool({
         name: 'search',
         arguments: { query, numResults },
       });
+      const response = await Promise.race([searchPromise, timeoutPromise]);
       
-      // Validate response format
-      if (!response || !Array.isArray((response as any).results)) {
-        throw new SearchError('Invalid search response format', query);
-      }
-
-      if ('results' in response) {
+      if (typeof response === 'object' && response !== null && 'results' in response) {
         return response as unknown as SearchResponse;
       }
       throw new SearchError('Response missing results array', query);
     } catch (error) {
-      if (error instanceof SearchError) {
+      // Handle client connection errors
+      if (error instanceof Error && error.message.includes('connection')) {
+        throw new MCPConnectionError(
+          'Failed to connect to search service',
+          query,
+          error
+        );
+      }
+      if (error instanceof SearchError || 
+          error instanceof MCPTimeoutError || 
+          error instanceof MCPConnectionError) {
         throw error;
       }
       throw new SearchError(

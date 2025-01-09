@@ -15,6 +15,24 @@ import { encode, decodeCells } from '../srcmd.mjs';
 import { buildProjectXml, type FileContent } from '../ai/app-parser.mjs';
 import { logAppGeneration } from './logger.mjs';
 import wss from '../server/ws.mjs';
+// Add to the imports in generate.mts
+import { McpService } from './search.mjs';
+
+let mcpService: McpService | null = null;
+
+export async function cleanup() {
+  if (mcpService) {
+    await mcpService.disconnect(); // We added this method earlier
+    mcpService = null;
+  }
+}
+
+async function getMcpService(session: SessionType) {
+  if (!mcpService) {
+    mcpService = new McpService(wss, session.id);
+  }
+  return mcpService;
+}
 
 const makeGenerateSrcbookSystemPrompt = () => {
   return readFileSync(Path.join(PROMPTS_DIR, 'srcbook-generator.txt'), 'utf-8');
@@ -149,15 +167,19 @@ type NoToolsGenerateTextResult = GenerateTextResult<{}>;
  * In the future, we can parameterize this with different models, to allow
  * users to use different providers like Anthropic or local ones.
  */
-export async function generateSrcbook(query: string): Promise<NoToolsGenerateTextResult> {
+export async function generateSrcbook(query: string, session: SessionType): Promise<NoToolsGenerateTextResult> {
   const model = await getModel();
+  const mcp = await getMcpService(session);
+  
+  // Enrich the prompt with search results if needed
+  const enrichedPrompt = await mcp.enrichPromptWithWebResults(session, query);
+  
   const result = await generateText({
     model,
     system: makeGenerateSrcbookSystemPrompt(),
-    prompt: query,
+    prompt: enrichedPrompt
   });
 
-  // TODO, handle 'length' finish reason with sequencing logic.
   if (result.finishReason !== 'stop') {
     console.warn('Generated a srcbook, but finish_reason was not "stop":', result.finishReason);
   }
@@ -185,9 +207,11 @@ export async function generateCells(
   insertIdx: number,
 ): Promise<GenerateCellsResult> {
   const model = await getModel();
+  const mcp = await getMcpService(session);
 
   const systemPrompt = makeGenerateCellSystemPrompt(session.language);
-  const userPrompt = makeGenerateCellUserPrompt(session, insertIdx, query);
+  const enrichedQuery = await mcp.enrichPromptWithWebResults(session, query);
+  const userPrompt = makeGenerateCellUserPrompt(session, insertIdx, enrichedQuery);
   const result = await generateText({
     model,
     system: systemPrompt,
@@ -297,3 +321,4 @@ export async function streamEditApp(
 
   return result.textStream;
 }
+
